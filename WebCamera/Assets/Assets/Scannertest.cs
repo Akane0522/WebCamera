@@ -5,17 +5,355 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-public class Scannertest : MonoBehaviour {
+public class Scannertest : MonoBehaviour
+{
+    // Use this for initialization
+    void Start()
+    {
 
-	// Use this for initialization
-	void Start () {
-		
-	}
-	
-	// Update is called once per frame
-	void Update () {
-		
-	}
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+
+    }
+}
+    static partial class ArryUtilities {
+        /// <summary>
+        /// Checks whether array contains element
+        /// </summary>
+        /// <param name="array">Input array to check</param>
+        /// <param name="obj">Element we're looking for</param>
+        public static bool Contains<T>(this T[] array, T obj)
+        {
+            return ((IList<T>)array).Contains(obj);
+        }
+
+        /// <summary>
+        /// Swaps two elements of the array
+        /// </summary>
+        /// <param name="array">Input array</param>
+        /// <param name="i1">Firts element index</param>
+        /// <param name="i2">Second element index</param>
+        public static void Swap<T>(this T[] array, int i1, int i2)
+        {
+            T v = array[i2];
+            array[i2] = array[i1];
+            array[i1] = v;
+        }
+
+        /// <summary>
+        /// Finds object closest to the given reference object in an array
+        /// </summary>
+        /// <param name="array">Array to search</param>
+        /// <param name="referenceObject">Object to find closes element for</param>
+        /// <param name="distanceMeasurer">Distance calculation function</param>
+        /// <returns></returns>
+        public static T ClosestElement<T>(this T[] array, T referenceObject, System.Func<T, T, double> distanceMeasurer)
+        {
+            if (array.Length == 0)
+                throw new OpenCvSharpException("Array can not be empty.");
+
+            // LINQ would work best here, but I read about issues with sorting (OrderBy) on Unity/iOS, so I'll pass and
+            // make my own sorting
+            T[] copy = (T[])array.Clone();
+            System.Array.Sort(copy, (a, b) => distanceMeasurer(a, referenceObject).CompareTo(distanceMeasurer(b, referenceObject)));
+            return copy[0];
+        }
+    }
+    /// <summary>
+    /// OpenCV Mat class extension with some handy methods
+    /// </summary>
+    static partial class MatUtilities
+    {
+        /// <summary>
+        /// Computes median value for GRAY input image
+        /// </summary>
+        /// <param name="matGray">Mat with gray image</param>
+        /// <param name="max">Max channel value, 256 by default</param>
+        /// <returns>Image median</returns>
+        public static int Median(this Mat matGray, int max = 256)
+        {
+            Mat hist = new Mat();
+            int[] hdims = { max };
+            Rangef[] ranges = { new Rangef(0, max), };
+            Cv2.CalcHist(
+                new Mat[] { matGray },
+                new int[] { 0 },
+                null,
+                hist,
+                1,
+                hdims,
+                ranges);
+
+            int median = 0, sum = 0;
+            int thresh = (int)matGray.Total() / 2;
+            while (sum < thresh && median < max)
+            {
+                sum += (int)(hist.Get<float>(median));
+                median++;
+            }
+            return median;
+        }
+
+        /// <summary>
+        /// Calculates upper and lower threshold bound for a GRAY image
+        /// </summary>
+        /// <param name="matGray">Input gray image</param>
+        /// <param name="lower">Output lower bound</param>
+        /// <param name="upper">Output upper bound</param>
+        /// <param name="sigma">Threshold strength param where [0, 1] means [tightest, widest] threshold</param>
+        private static void CalculateThresholdBounds(Mat matGray, out int lower, out int upper, double sigma)
+        {
+            // prepare
+            int median = matGray.Median();
+            lower = (int)Math.Max(0.0, (1.0 - sigma) * median);
+            upper = (int)Math.Min(255.0, (1.0 + sigma) * median);
+        }
+
+        /// <summary>
+        /// Automatic edge detector, defines bounds on it's own
+        /// Presumes the input is GRAY image
+        /// </summary>
+        /// <param name="matGray">Mat to detect edges on</param>
+        /// <param name="sigma">Threshold strength param where [0, 1] means [tightest, widest] threshold</param>
+        /// <returns>Mat with edges filtered</returns>
+        public static Mat AdaptiveEdges(this Mat matGray, double sigma = 0.33)
+        {
+            int upper, lower;
+            CalculateThresholdBounds(matGray, out lower, out upper, sigma);
+            return matGray.Canny(lower, upper, 3, true);
+        }
+
+        /// <summary>
+        /// Special threshold algorithm based on https://stackoverflow.com/questions/13391073/adaptive-threshold-of-blurry-image
+        /// </summary>
+        /// <param name="otsuRegions">Amount of splits for the image to perform Otsu threshold</param>
+        /// <returns></returns>
+        public static Mat MorphThreshold(this Mat matGray, int otsuRegions = 3)
+        {
+            Mat image = matGray.Clone();
+
+            // Divide the image by its morphologically closed counterpart
+            Mat kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(19, 19));
+            Mat closed = new Mat();
+            Cv2.MorphologyEx(image, closed, MorphTypes.Close, kernel);
+
+            //image.ConvertTo(image, MatType.CV_32F);
+            Cv2.Divide(image, closed, image);
+            Cv2.Normalize(image, image, 0, 255, NormTypes.MinMax);
+            //image.ConvertTo(image, MatType.CV_8UC1);
+
+            // Threshold each block (3x3 grid) of the image separately to
+            // correct for minor differences in contrast across the image
+            int tw = image.Width / otsuRegions, th = image.Height / otsuRegions;
+            for (int i = 0; i < otsuRegions; i++)
+            {
+                for (int j = 0; j < otsuRegions; j++)
+                {
+                    Mat block = image.SubMat(i * th, (i + 1) * th, j * tw, (j + 1) * tw);
+                    Cv2.Threshold(block, block, -1, 255, ThresholdTypes.Binary | ThresholdTypes.Otsu);
+                }
+            }
+
+            return image;
+        }
+
+        /// <summary>
+        /// "Posterizes" image and returns new Mat with result. Implementation is color
+        /// quantization with K-Means algorithm
+        /// 
+        /// Note: it's slow, don't use on big images
+        /// </summary>
+        /// <param name="colors">Desired output color count</param>
+        /// <returns>New Mat with requested colors count</returns>
+        public static Mat PosterizedImage(this Mat img, int colors)
+        {
+            // basics
+            int attempts = 5;
+            double eps = 0.01;
+            TermCriteria criteria = new TermCriteria(CriteriaType.Eps | CriteriaType.MaxIter, attempts, eps);
+
+            // prepare
+            Mat labels = new Mat(), centers = new Mat();
+            Mat samples = new Mat(img.Rows * img.Cols, 3, MatType.CV_32F);
+            for (int y = 0; y < img.Rows; y++)
+            {
+                for (int x = 0; x < img.Cols; x++)
+                {
+                    Vec3b color = img.At<Vec3b>(y, x);
+                    for (int z = 0; z < 3; z++)
+                        samples.Set<float>(y + x * img.Rows, z, color[z]);
+                }
+            }
+
+            // run k-means
+            Cv2.Kmeans(samples, colors, labels, criteria, attempts, KMeansFlags.PpCenters, centers);
+
+            // restore original image
+            Mat new_image = new Mat(img.Size(), img.Type());
+            for (int y = 0; y < img.Rows; y++)
+            {
+                for (int x = 0; x < img.Cols; x++)
+                {
+                    int cluster_idx = labels.At<int>(y + x * img.Rows, 0);
+                    Vec3b color = new Vec3b(
+                        (byte)centers.At<float>(cluster_idx, 0),
+                        (byte)centers.At<float>(cluster_idx, 1),
+                        (byte)centers.At<float>(cluster_idx, 2)
+                    );
+
+                    new_image.Set(y, x, color);
+                }
+            }
+
+            return new_image;
+        }
+
+        /// <summary>
+        /// Reduces color count in the image
+        /// </summary>
+        /// <param name="div">Output colors count</param>
+        /// <returns></returns>
+        public static unsafe Mat ColorReduced(this Mat source, int div = 64)
+        {
+            // prepare
+            Mat image = source.Clone();
+
+            // "manual" implementation
+            for (int j = 0; j < image.Rows; j++)
+            {
+                // get the address of row j
+                byte* b = (byte*)image.Ptr(j).ToPointer();
+
+                for (int i = 0; i < image.Cols; i++)
+                {
+                    for (int c = 0; c < image.Channels(); c++, b++)
+                        *b = (byte)(*b / div * div + div / 2);
+                }
+            }
+
+            // this should run in parallel when possible
+            //image.ForEachAsByte((byte* b, int* p) => *b = (byte)(*b / div * div + div / 2));
+
+            // return
+            return image;
+        }
+
+        /// <summary>
+        /// Counts colors in the BGR image
+        /// </summary>
+        /// <param name="maxCount">Maximum colors to count, the lower this value is the better for performance</param>
+        /// <returns>Colors count</returns>
+        public static int CountUniqueColors(this Mat img, int maxCount)
+        {
+            var matGray = img.CvtColor(ColorConversionCodes.BGR2GRAY);
+
+            // calculate histogram
+            Mat hist = new Mat();
+            int[] hdims = { maxCount };
+            Rangef[] ranges = { new Rangef(0, 256) };
+            Cv2.CalcHist(new Mat[] { matGray }, new int[] { 0 }, null, hist, 1, hdims, ranges);
+
+            // scales and draws histogram
+            return hist.CountNonZero();
+        }
+
+        /// <summary>
+        /// Gets per-channel histograms for image and renders with given params
+        /// Hint: It doesn't render anything fancy, the method is designed for debugging purposes and as an example
+        /// </summary>
+        /// <param name="bins">Desired histogram bins</param>
+        /// <param name="outputSize">Rendered image size</param>
+        /// <param name="background">Background color (bgr)</param>
+        /// <param name="colors">Histograam color (bgr), one per source image channel</param>
+        /// <param name="thickness">Histogram line thickness</param>
+        /// <returns>Rendered histogram image</returns>
+        public static Mat RenderedHistogram(this Mat img, int bins, Size outputSize, Scalar background, Scalar[] colors, int thickness)
+        {
+            Mat[] channels = img.Split();
+            if (channels.Length != colors.Length)
+                throw new OpenCvSharpException("colors array must have a color for each channel of the source image");
+
+            // calculate histograms and render
+            Mat hist = new Mat();
+            int[] hdims = { bins };
+            Rangef[] ranges = { new Rangef(0, 256) };
+            Point[][] charts = new Point[channels.Length][];
+            for (int c = 0; c < channels.Length; ++c)
+            {
+                // calculate histogram
+                Cv2.CalcHist(new Mat[] { channels[c] }, new int[] { 0 }, null, hist, 1, hdims, ranges, true, false);
+
+                // normalize
+                Cv2.Normalize(hist, hist, 0, outputSize.Height, NormTypes.MinMax);
+
+                // save
+                List<Point> chart = new List<Point>();
+                for (int j = 0; j < bins; ++j)
+                    chart.Add(new Point(j, outputSize.Height - hist.At<float>(j, 0)));
+                charts[c] = chart.ToArray();
+            }
+
+            // render
+            Mat output = new Mat(outputSize, MatType.CV_8UC3);
+            output.SetTo(InputArray.Create(background));
+            for (int c = 0; c < channels.Length; ++c)
+                output.Polylines(new Point[][] { charts[c] }, false, colors[c], thickness);
+
+            return output;
+        }
+
+        /// <summary>
+        /// Extracts shape inside the given RotatedRect and un-warps it
+        /// </summary>
+        /// <param name="input">Input image</param>
+        /// <param name="points">Sorted corners of the shape</param>
+        /// <param name="corners">Downscaling option, biggest size with be re-scaled to this value. 0 means no downscaling (default value)</param>
+        /// <returns>New OpenCV Mat with un-warped object</returns>
+        public static Mat UnwrapShape(this Mat img, Point2f[] corners, int maxSize = 0)
+        {
+            if (corners.Length != 4)
+                throw new OpenCvSharpException("argument 'points' must be of length = 4");
+
+            // grab bounds corners, sort them in correct order and
+            // get width/height of the shape
+            float width = (float)Point2f.Distance(corners[0], corners[1]);  // lt -> rt
+            float height = (float)Point2f.Distance(corners[0], corners[3]); // lt -> lb
+
+            // downscaling
+            if (maxSize > 0 && (width > maxSize || height > maxSize))
+            {
+                if (width > height)
+                {
+                    var s = maxSize / width;
+                    width = maxSize;
+                    height = height * s;
+                }
+                else
+                {
+                    var s = maxSize / height;
+                    height = maxSize;
+                    width = width * s;
+                }
+            }
+
+            // compute transform
+            Point2f[] destination = new Point2f[]
+            {
+                new Point2f(0,     0),
+                new Point2f(width, 0),
+                new Point2f(width, height),
+                new Point2f(0,     height)
+            };
+            var transform = Cv2.GetPerspectiveTransform(corners, destination);
+
+            // un-warp
+            return img.WarpPerspective(transform, new Size(width, height), InterpolationFlags.Cubic);
+        }
+    }
+
     public class PaperScanner
     {
         private bool dirty_ = true;
@@ -561,4 +899,3 @@ public class Scannertest : MonoBehaviour {
             dirty_ = false;
         }
     }
-}
