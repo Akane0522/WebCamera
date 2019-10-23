@@ -3,6 +3,10 @@ using System.IO;
 using UnityEngine;
 using System.Drawing.Imaging;
 using System.Drawing;
+using UnityEngine.UI;
+using OpenCvSharp;
+using Size = OpenCvSharp.Size;
+using Point = OpenCvSharp.Point;
 
 public class WebCameraTest : MonoBehaviour
 {
@@ -10,7 +14,6 @@ public class WebCameraTest : MonoBehaviour
     WebCamTexture webCamTexture;
     int x = 1920;
     int y = 1080;
-    int fps = 30;
     private int num = 0;
     private int difnum = 0;
     private int exp = 0;
@@ -18,6 +21,10 @@ public class WebCameraTest : MonoBehaviour
     private int level = 1;
     private int userlevel;
     private string username;
+    public Point[] rectpoint;
+    
+    public Point drawrect;
+    public int rectwidth, rectheight;
 
     /*tanipai
         グローバル変数のusername、userlevelをaset/userdata.txt
@@ -38,37 +45,54 @@ public class WebCameraTest : MonoBehaviour
     void Start()
     {
         WebCamDevice[] devices = WebCamTexture.devices;
-        webCamTexture = new WebCamTexture(devices[0].name, x, y, fps);
-        print(webCamTexture);
+        webCamTexture = new WebCamTexture(devices[0].name);
+        Debug.Log(webCamTexture);
         GetComponent<Renderer>().material.mainTexture = webCamTexture;
         webCamTexture.Play();
 
-        Textread();
+        //Textread();
     }
 
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Space))
-        {
-            print("keydownspace");
-            if (webCamTexture != null)
+        if (Input.touchCount > 0) {
+            Touch touch = Input.GetTouch(0);
+        
+            if (touch.phase == TouchPhase.Began)
             {
-                SaveToPNGFile(webCamTexture.GetPixels(), Application.dataPath + "/../SavedScreen" + num + ".png");
-                num++;
-
-                if (num == 2)
+                //print("keydownspace");
+                if (webCamTexture != null)
                 {
-                    Compare(Application.dataPath + "/../SavedScreen0.png", Application.dataPath + "/../SavedScreen1.png", 
-                            Application.dataPath + "/../diffScreen" + num + ".png");
-                    ExperiencePoint(difnum);
-                   // print("Save picture. Diffnum : " + difnum + " Exp : " + "Level : " + level);
-                    num = 0;
+                String file_path0 = Application.dataPath + "/Assets/Resources/SavedScreen";
+                String file_path1 = Application.dataPath + "/Assets/Resources/BufScreen";
+                String file_path2 = Application.dataPath + "/Assets/Resources/rectScreen";
+
+                //SaveToPNGFile(webCamTexture.GetPixels(), Application.dataPath + "/../SavedScreen" + num + ".png");
+                while (!SaveToPNGFile(webCamTexture.GetPixels(), file_path0 + num + ".png"))
+                    {
+
+                    }
+                    Process(file_path0 + num + ".png");
+                    create_rect(rectpoint);
+                    if(num == 0){
+                        cut_rect(rectpoint);
+                    }
+                    getCenterClippedTexture((Texture2D)ReadTexture(file_path0 + num + ".png", x, y));
+                    num++;
+
+                    if (num == 2)
+                    {
+                        Compare(file_path2 + "0.png", file_path2 + "1.png", file_path1 + "2.png");
+                        ExperiencePoint(difnum);
+                    // print("Save picture. Diffnum : " + difnum + " Exp : " + "Level : " + level);
+                        num = 0;
+                    }
                 }
             }
         }
     }
 
-    void SaveToPNGFile(UnityEngine.Color[] texData, string filename)
+    bool SaveToPNGFile(UnityEngine.Color[] texData, string filename)
     {
         Texture2D takenPhoto = new Texture2D(x, y, TextureFormat.ARGB32, false);
 
@@ -80,6 +104,42 @@ public class WebCameraTest : MonoBehaviour
 
         // For testing purposes, also write to a file in the project folder
         File.WriteAllBytes(filename, png);
+
+        return true;
+    }
+
+       bool RectSaveToPNGFile(UnityEngine.Color[] texData, string filename)
+    {
+        Texture2D takenPhoto = new Texture2D(rectwidth, rectheight, TextureFormat.ARGB32, false);
+
+        takenPhoto.SetPixels(texData);
+        takenPhoto.Apply();
+
+        byte[] png = takenPhoto.EncodeToPNG();
+        Destroy(takenPhoto);
+
+        // For testing purposes, also write to a file in the project folder
+        File.WriteAllBytes(filename, png);
+
+        return true;
+    }
+
+    // 四角形で囲んだ部分を切り取り、保存する
+    Texture2D getCenterClippedTexture(Texture2D texture)
+    {
+        UnityEngine.Color[] pixel;
+        Texture2D clipTex = new Texture2D(rectwidth, rectheight);
+
+        // GetPixels (x, y, width, height) で切り出せる
+        pixel = texture.GetPixels(drawrect.X, drawrect.Y, rectwidth, rectheight);
+
+        clipTex.SetPixels(pixel);
+        clipTex.Apply();
+
+        String file_path = Application.dataPath + "/Assets/Resources/rectScreen";
+
+        RectSaveToPNGFile(clipTex.GetPixels(), file_path + num + ".png");
+        return clipTex;
     }
 
     /// <summary>
@@ -155,5 +215,186 @@ public class WebCameraTest : MonoBehaviour
         }
         print("Save picture. Diffnum : " + difnum + " Exp : " + exp + " ExpSum : " + exsum + " Level : " + level);
 
+    }
+
+    /// ペーパースキャナーで四角を算出したが長方形でないため。長方形のサイズを決定する。
+    private void create_rect(Point[] pointrect){
+        //decide rect size
+        if(pointrect[0].X < pointrect[3].X){
+            drawrect.X = pointrect[0].X;
+        }else{
+            drawrect.X = pointrect[3].X;
+        }
+
+        if(pointrect[0].Y < pointrect[1].Y){
+            drawrect.Y = pointrect[0].Y;
+        }else{
+            drawrect.Y = pointrect[1].Y;
+        }
+    }
+    private void cut_rect(Point[] pointrect){
+        int h1 = pointrect[3].Y - pointrect[0].Y;
+        int h2 = pointrect[2].Y - pointrect[1].Y;
+
+        if(h1 < h2){
+            rectheight = h2;
+        }
+        else{
+            rectheight = h1;
+        }
+
+        int w1 = pointrect[1].X - pointrect[0].X;
+        int w2 = pointrect[2].X - pointrect[3].X;
+
+        if(w1 < w2){
+            rectwidth = w2;
+        }
+        else{
+            rectwidth = w1;
+        }
+
+        
+        Debug.Log(drawrect.X);
+        Debug.Log(drawrect.Y);
+        Debug.Log(rectheight);
+        Debug.Log(rectwidth);
+        
+
+    }
+
+    private PaperScanner scanner = new PaperScanner();
+
+    #region Boring code that combines output image with OpenCV
+
+    /// <summary>
+    /// Combines original and processed images into a new twice wide image
+    /// </summary>
+    /// <param name="original">Source image</param>
+    /// <param name="processed">Processed image</param>
+    /// <param name="detectedContour">Contour to draw over original image to show detected shape</param>
+    /// <returns>OpenCV::Mat image with images combined</returns>
+    private Mat CombineMats(Mat original, Mat processed, Point[] detectedContour)
+    {
+        Size inputSize = new Size(original.Width, original.Height);
+
+        // combine fancy output image:
+        // - create new texture twice as wide as input
+        // - copy input into the left half
+        // - draw detected paper contour over original input
+        // - put "scanned", un-warped and cleared paper to the right, centered in the right half
+        var matCombined = new Mat(new Size(inputSize.Width, inputSize.Height), original.Type(), Scalar.FromRgb(64, 64, 64));
+
+        // copy original image with detected shape drawn over
+        original.CopyTo(matCombined.SubMat(0, inputSize.Height, 0, inputSize.Width));
+        if (null != detectedContour && detectedContour.Length > 2)
+            matCombined.DrawContours(new Point[][] { detectedContour }, 0, Scalar.FromRgb(255, 255, 0), 3);
+
+        // copy scanned paper without extra scaling, as is
+        if (null != processed)
+        {
+            double hw =inputSize.Width * 0.5;
+            double hh = inputSize.Height * 0.5;
+            Point2d center = new Point2d(inputSize.Width * 0.5, inputSize.Height * 0.5);
+            Mat roi = matCombined.SubMat(
+                (int)(center.Y - hh), (int)(center.Y + hh),
+                (int)(center.X - hw), (int)(center.X + hw)
+            );
+            processed.CopyTo(roi);
+        }
+        
+        //四角の座標を参照するポイント型配列をclass内変数に代入しておく。
+        rectpoint = scanner.pointing_C;
+        
+        Debug.Log("point1 x " + scanner.pointing_C[0].X + ", y: " + scanner.pointing_C[0].Y);
+        Debug.Log("point2 x " + scanner.pointing_C[1].X + ", y: " + scanner.pointing_C[1].Y);
+        Debug.Log("point3 x " + scanner.pointing_C[2].X + ", y: " + scanner.pointing_C[2].Y);
+        Debug.Log("point4 x " + scanner.pointing_C[3].X + ", y: " + scanner.pointing_C[3].Y);
+        
+        return matCombined;
+    }
+
+    #endregion
+    Texture2D duplicateTexture(Texture2D source)
+    {
+        RenderTexture renderTex = RenderTexture.GetTemporary(
+                    source.width,
+                    source.height,
+                    0,
+                    RenderTextureFormat.Default,
+                    RenderTextureReadWrite.Linear);
+
+        UnityEngine.Graphics.Blit(source, renderTex);
+        RenderTexture previous = RenderTexture.active;
+        RenderTexture.active = renderTex;
+        Texture2D readableText = new Texture2D(source.width, source.height);
+        readableText.ReadPixels(new UnityEngine.Rect(0, 0, renderTex.width, renderTex.height), 0, 0);
+        readableText.Apply();
+        RenderTexture.active = previous;
+        RenderTexture.ReleaseTemporary(renderTex);
+        return readableText;
+    }
+
+    byte[] ReadPngFile(string path){
+        FileStream fileStream = new FileStream(path, FileMode.Open, FileAccess.Read);
+        BinaryReader bin = new BinaryReader(fileStream);
+        byte[] values = bin.ReadBytes((int)bin.BaseStream.Length);
+
+        bin.Close();
+
+        return values;
+    }
+
+    Texture ReadTexture(string path, int width, int height){
+        byte[] readBinary = ReadPngFile(path);
+
+        Texture2D texture = new Texture2D(width, height);
+        texture.LoadImage(readBinary);
+
+        return texture;
+    }
+
+    // Use this for initialization
+    public void Process(string filename)
+    {
+ 
+        Texture2D inputTexture = duplicateTexture((Texture2D)ReadTexture(filename, x, y));
+        Debug.Log(inputTexture);
+        // first of all, we set up scan parameters
+        // 
+        // scanner.Settings has more values than we use
+        // (like Settings.Decolorization that defines
+        // whether b&w filter should be applied), but
+        // default values are quite fine and some of
+        // them are by default in "smart" mode that
+        // uses heuristic to find best choice. so,
+        // we change only those that matter for us
+        scanner.Settings.NoiseReduction = 0.7;                                          // real-world images are quite noisy, this value proved to be reasonable
+        scanner.Settings.EdgesTight = 0.9;                                              // higher value cuts off "noise" as well, this time smaller and weaker edges
+        scanner.Settings.ExpectedArea = 0.2;                                            // we expect document to be at least 20% of the total image area
+        scanner.Settings.GrayMode = PaperScanner.ScannerSettings.ColorMode.Grayscale;   // color -> grayscale conversion mode
+
+        // process input with PaperScanner
+        Mat result = null;
+
+        scanner.Input = OpenCvSharp.Unity.TextureToMat(inputTexture);
+
+        // should we fail, there is second try - HSV might help to detect paper by color difference
+        if (!scanner.Success)
+            // this will drop current result and re-fetch it next time we query for 'Success' flag or actual data
+            scanner.Settings.GrayMode = PaperScanner.ScannerSettings.ColorMode.HueGrayscale;
+
+        // now can combine Original/Scanner image
+        result = CombineMats(scanner.Input, scanner.Output, scanner.PaperShape);
+
+        // apply result or source (late for a failed scan)
+        //rawImage.texture = OpenCvSharp.Unity.MatToTexture(result);
+
+        // var transform = gameObject.GetComponent<RectTransform>();
+        // transform.sizeDelta = new Vector2(result.Width, result.Height);
+
+        Texture2D outputTexture = OpenCvSharp.Unity.MatToTexture(result);
+        String file_path = Application.dataPath + "/Assets/Resources/BufScreen";
+
+        SaveToPNGFile(outputTexture.GetPixels(),file_path + num + ".png");
     }
 }

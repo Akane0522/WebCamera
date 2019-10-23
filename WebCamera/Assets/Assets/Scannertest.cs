@@ -356,6 +356,7 @@ public class Scannertest : MonoBehaviour
 
     public class PaperScanner
     {
+        public Point[] pointing_C;
         private bool dirty_ = true;
         private Mat matInput_ = null;
         private Mat matOutput_ = null;
@@ -647,7 +648,7 @@ public class Scannertest : MonoBehaviour
             // divide vertically
             System.Array.Sort<Point>(corners, (a, b) => a.Y.CompareTo(b.Y));
             Point[] tops = new Point[] { corners[0], corners[1] }, bottoms = new Point[] { corners[2], corners[3] };
-
+       
             // divide horizontally
             System.Array.Sort<Point>(corners, (a, b) => a.X.CompareTo(b.X));
             Point[] lefts = new Point[] { corners[0], corners[1] }, rights = new Point[] { corners[2], corners[3] };
@@ -664,8 +665,12 @@ public class Scannertest : MonoBehaviour
             if (!rights.Contains(bottoms[0]))
                 output.Swap(2, 3);
 
-            // done
-            return output;
+        /*Debug.Log(output[1]);
+        Debug.Log(output[2]);
+        Debug.Log(output[3]);*/
+
+        // done
+        return output;
         }
 
         /// <summary>
@@ -814,6 +819,7 @@ public class Scannertest : MonoBehaviour
 
             // find best guess for our contour
             Point[] paperContour = GetBestMatchingContour(matScaled.Width * matScaled.Height, goodCandidates, hullContour);
+
             if (null == paperContour)
             {
                 shape_ = null;
@@ -857,6 +863,9 @@ public class Scannertest : MonoBehaviour
                     paperContour[i] = new Point2f(pt.X / sx, pt.Y / sy);
                 }
             }
+
+            /* debug take rect postion 4 point */
+            pointing_C = paperContour;
 
             // un-wrap
             var matUnwrapped = matInput_;
