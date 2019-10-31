@@ -12,8 +12,8 @@ public class WebCameraTest : MonoBehaviour
 {
 
     WebCamTexture webCamTexture;
-    int x = 1920;
-    int y = 1080;
+    int x = 1280;
+    int y = 800;
     private int num = 0;
     private int difnum = 0;
     private int exp = 0;
@@ -25,12 +25,12 @@ public class WebCameraTest : MonoBehaviour
     
     public Point drawrect;
     public int rectwidth, rectheight;
+    public GameObject num_object = null; // Textオブジェクト
 
     /*tanipai
         グローバル変数のusername、userlevelをaset/userdata.txt
         の内部から呼び出し格納を行う。
-        テキストファイルは1行目がusername,2行目がuserlevelとなっている。
-         
+        テキストファイルは1行目がusername,2行目がuserlevelとなっている。    
     */
     void Textread()
     {
@@ -45,7 +45,7 @@ public class WebCameraTest : MonoBehaviour
     void Start()
     {
         WebCamDevice[] devices = WebCamTexture.devices;
-        webCamTexture = new WebCamTexture(devices[0].name);
+        webCamTexture = new WebCamTexture(devices[0].name, x, y, 60);
         Debug.Log(webCamTexture);
         GetComponent<Renderer>().material.mainTexture = webCamTexture;
         webCamTexture.Play();
@@ -55,71 +55,76 @@ public class WebCameraTest : MonoBehaviour
 
     void Update()
     {
-        if (Input.touchCount > 0) {
-            Touch touch = Input.GetTouch(0);
-        
-            if (touch.phase == TouchPhase.Began)
-            {
-                //print("keydownspace");
-                if (webCamTexture != null)
-                {
-                String file_path0 = Application.dataPath + "/Assets/Resources/SavedScreen";
-                String file_path1 = Application.dataPath + "/Assets/Resources/BufScreen";
-                String file_path2 = Application.dataPath + "/Assets/Resources/rectScreen";
+        String Android_path0 = Application.temporaryCachePath + "/SavedScreen";
+        String Android_path1 = Application.temporaryCachePath + "/BufScreen";
+        String Android_path2 = Application.temporaryCachePath + "/rectScreen";
 
-                //SaveToPNGFile(webCamTexture.GetPixels(), Application.dataPath + "/../SavedScreen" + num + ".png");
-                while (!SaveToPNGFile(webCamTexture.GetPixels(), file_path0 + num + ".png"))
-                    {
+        // オブジェクトからTextコンポーネントを取得
+        Text num_text = num_object.GetComponent<Text> ();
+        // テキストを表示
+        num_text.text = "Num:" + num;
 
-                    }
-                    Process(file_path0 + num + ".png");
-                    create_rect(rectpoint);
-                    if(num == 0){
-                        cut_rect(rectpoint);
-                    }
-                    getCenterClippedTexture((Texture2D)ReadTexture(file_path0 + num + ".png", x, y));
-                    num++;
-
-                    if (num == 2)
-                    {
-                        Compare(file_path2 + "0.png", file_path2 + "1.png", file_path1 + "2.png");
-                        ExperiencePoint(difnum);
-                    // print("Save picture. Diffnum : " + difnum + " Exp : " + "Level : " + level);
-                        num = 0;
-                    }
-                }
-            }
+        // 画像が2枚生成されたら比較する
+        if (num == 2)
+        {
+            // 比較する
+            Compare(Android_path2 + "0.jpg", Android_path2 + "1.jpg", Android_path1 + "2.jpg");
+            //ExperiencePoint(difnum);
+            num = 0;
         }
     }
 
-    bool SaveToPNGFile(UnityEngine.Color[] texData, string filename)
+    public void OnClick()
+    {        
+        String Android_path0 = Application.temporaryCachePath + "/SavedScreen";
+        String Android_path1 = Application.temporaryCachePath + "/BufScreen";
+        String Android_path2 = Application.temporaryCachePath + "/rectScreen";
+        
+        
+        if (webCamTexture != null)
+        {
+            SaveToJPGFile(webCamTexture.GetPixels(0, 0, x, y), Android_path0 + num + ".jpg");
+
+            Process(Android_path0 + num + ".jpg");
+            create_rect(rectpoint);
+            
+            if(num == 0)
+            {
+                cut_rect(rectpoint);
+            }
+
+            getCenterClippedTexture((Texture2D)ReadTexture(Android_path0 + num + ".jpg", x, y));
+            num++;
+        }
+    }
+
+    void SaveToJPGFile(UnityEngine.Color[] texData, string filename)
     {
         Texture2D takenPhoto = new Texture2D(x, y, TextureFormat.ARGB32, false);
 
         takenPhoto.SetPixels(texData);
         takenPhoto.Apply();
 
-        byte[] png = takenPhoto.EncodeToPNG();
+        byte[] jpg = takenPhoto.EncodeToJPG();
         Destroy(takenPhoto);
 
         // For testing purposes, also write to a file in the project folder
-        File.WriteAllBytes(filename, png);
+        File.WriteAllBytes(filename, jpg);
 
-        return true;
     }
 
-       bool RectSaveToPNGFile(UnityEngine.Color[] texData, string filename)
+    bool RectSaveToJPGFile(UnityEngine.Color[] texData, string filename)
     {
         Texture2D takenPhoto = new Texture2D(rectwidth, rectheight, TextureFormat.ARGB32, false);
 
         takenPhoto.SetPixels(texData);
         takenPhoto.Apply();
 
-        byte[] png = takenPhoto.EncodeToPNG();
+        byte[] jpg = takenPhoto.EncodeToJPG();
         Destroy(takenPhoto);
 
         // For testing purposes, also write to a file in the project folder
-        File.WriteAllBytes(filename, png);
+        File.WriteAllBytes(filename, jpg);
 
         return true;
     }
@@ -137,8 +142,9 @@ public class WebCameraTest : MonoBehaviour
         clipTex.Apply();
 
         String file_path = Application.dataPath + "/Assets/Resources/rectScreen";
+        String Android_path = Application.temporaryCachePath + "/rectScreen";
 
-        RectSaveToPNGFile(clipTex.GetPixels(), file_path + num + ".png");
+        RectSaveToJPGFile(clipTex.GetPixels(), Android_path + num + ".jpg");
         return clipTex;
     }
 
@@ -196,7 +202,7 @@ public class WebCameraTest : MonoBehaviour
                 }
             }
         }
-        diffBmp.Save(path, ImageFormat.Png);
+        diffBmp.Save(path, ImageFormat.Jpeg);
     }
 
     void ExperiencePoint(int d)
@@ -252,14 +258,6 @@ public class WebCameraTest : MonoBehaviour
         else{
             rectwidth = w1;
         }
-
-        
-        Debug.Log(drawrect.X);
-        Debug.Log(drawrect.Y);
-        Debug.Log(rectheight);
-        Debug.Log(rectwidth);
-        
-
     }
 
     private PaperScanner scanner = new PaperScanner();
@@ -305,11 +303,6 @@ public class WebCameraTest : MonoBehaviour
         //四角の座標を参照するポイント型配列をclass内変数に代入しておく。
         rectpoint = scanner.pointing_C;
         
-        Debug.Log("point1 x " + scanner.pointing_C[0].X + ", y: " + scanner.pointing_C[0].Y);
-        Debug.Log("point2 x " + scanner.pointing_C[1].X + ", y: " + scanner.pointing_C[1].Y);
-        Debug.Log("point3 x " + scanner.pointing_C[2].X + ", y: " + scanner.pointing_C[2].Y);
-        Debug.Log("point4 x " + scanner.pointing_C[3].X + ", y: " + scanner.pointing_C[3].Y);
-        
         return matCombined;
     }
 
@@ -334,7 +327,7 @@ public class WebCameraTest : MonoBehaviour
         return readableText;
     }
 
-    byte[] ReadPngFile(string path){
+    byte[] ReadjpgFile(string path){
         FileStream fileStream = new FileStream(path, FileMode.Open, FileAccess.Read);
         BinaryReader bin = new BinaryReader(fileStream);
         byte[] values = bin.ReadBytes((int)bin.BaseStream.Length);
@@ -345,7 +338,7 @@ public class WebCameraTest : MonoBehaviour
     }
 
     Texture ReadTexture(string path, int width, int height){
-        byte[] readBinary = ReadPngFile(path);
+        byte[] readBinary = ReadjpgFile(path);
 
         Texture2D texture = new Texture2D(width, height);
         texture.LoadImage(readBinary);
@@ -394,7 +387,8 @@ public class WebCameraTest : MonoBehaviour
 
         Texture2D outputTexture = OpenCvSharp.Unity.MatToTexture(result);
         String file_path = Application.dataPath + "/Assets/Resources/BufScreen";
+        String Android_path = Application.temporaryCachePath + "/BufScreen";
 
-        SaveToPNGFile(outputTexture.GetPixels(),file_path + num + ".png");
+        SaveToJPGFile(outputTexture.GetPixels(),Android_path + num + ".jpg");
     }
 }
