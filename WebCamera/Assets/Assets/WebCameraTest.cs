@@ -12,8 +12,10 @@ public class WebCameraTest : MonoBehaviour
 {
 
     WebCamTexture webCamTexture;
-    int x = 1280;
-    int y = 800;
+    int x = 1920;
+    int y = 1080;
+    //int x = 800;
+    //int y = 1280;
     private int num = 0;
     private int difnum = 0;
     private int exp = 0;
@@ -27,6 +29,9 @@ public class WebCameraTest : MonoBehaviour
     public int rectwidth, rectheight;
     public GameObject num_object = null; // Textオブジェクト
 
+    String File_path0;
+    String File_path1;
+    String File_path2;
     /*tanipai
         グローバル変数のusername、userlevelをaset/userdata.txt
         の内部から呼び出し格納を行う。
@@ -44,11 +49,16 @@ public class WebCameraTest : MonoBehaviour
 
     void Start()
     {
+        String File_path0 = Application.dataPath + "/Assets/Resources/SavedScreen";
+        String File_path1 = Application.dataPath + "/Assets/Resources/BufScreen";
+        String File_path2 = Application.dataPath + "/Assets/Resources/rectScreen";
+        
         WebCamDevice[] devices = WebCamTexture.devices;
         webCamTexture = new WebCamTexture(devices[0].name, x, y, 60);
         Debug.Log(webCamTexture);
         GetComponent<Renderer>().material.mainTexture = webCamTexture;
         webCamTexture.Play();
+        
 
         //Textread();
     }
@@ -63,29 +73,29 @@ public class WebCameraTest : MonoBehaviour
         Text num_text = num_object.GetComponent<Text> ();
         // テキストを表示
         num_text.text = "Num:" + num;
-
+        /*
         // 画像が2枚生成されたら比較する
         if (num == 2)
         {
             // 比較する
-            Compare(Android_path2 + "0.jpg", Android_path2 + "1.jpg", Android_path1 + "2.jpg");
+            Compare(File_path2 + "0.jpg", File_path2 + "1.jpg", File_path1 + "2.jpg");
             //ExperiencePoint(difnum);
             num = 0;
         }
+        */
     }
 
     public void OnClick()
     {        
-        String Android_path0 = Application.temporaryCachePath + "/SavedScreen";
-        String Android_path1 = Application.temporaryCachePath + "/BufScreen";
-        String Android_path2 = Application.temporaryCachePath + "/rectScreen";
-        
-        
+        String File_path0 = Application.dataPath + "/Assets/Resources/SavedScreen";  
+        String File_path1 = Application.dataPath + "/Assets/Resources/BufScreen";
+        String File_path2 = Application.dataPath + "/Assets/Resources/rectScreen";
+
         if (webCamTexture != null)
         {
-            SaveToJPGFile(webCamTexture.GetPixels(0, 0, x, y), Android_path0 + num + ".jpg");
+            SaveToJPGFile(webCamTexture.GetPixels(0, 0, x, y), File_path0 + num + ".jpg");
 
-            Process(Android_path0 + num + ".jpg");
+            Process(File_path0 + num + ".jpg");
             create_rect(rectpoint);
             
             if(num == 0)
@@ -93,8 +103,16 @@ public class WebCameraTest : MonoBehaviour
                 cut_rect(rectpoint);
             }
 
-            getCenterClippedTexture((Texture2D)ReadTexture(Android_path0 + num + ".jpg", x, y));
+            getCenterClippedTexture((Texture2D)ReadTexture(File_path0 + num + ".jpg", x, y));
             num++;
+
+            if (num == 2)
+            {
+                // 比較する
+                Compare(File_path2 + "0.jpg", File_path2 + "1.jpg", File_path1 + "2.jpg");
+                //ExperiencePoint(difnum);
+                num = 0;
+            }
         }
     }
 
@@ -136,7 +154,7 @@ public class WebCameraTest : MonoBehaviour
         Texture2D clipTex = new Texture2D(rectwidth, rectheight);
 
         // GetPixels (x, y, width, height) で切り出せる
-        pixel = texture.GetPixels(drawrect.X, drawrect.Y, rectwidth, rectheight);
+        pixel = texture.GetPixels(drawrect.X, y - drawrect.Y, rectwidth, rectheight);
 
         clipTex.SetPixels(pixel);
         clipTex.Apply();
@@ -144,7 +162,7 @@ public class WebCameraTest : MonoBehaviour
         String file_path = Application.dataPath + "/Assets/Resources/rectScreen";
         String Android_path = Application.temporaryCachePath + "/rectScreen";
 
-        RectSaveToJPGFile(clipTex.GetPixels(), Android_path + num + ".jpg");
+        RectSaveToJPGFile(clipTex.GetPixels(), file_path + num + ".jpg");
         return clipTex;
     }
 
@@ -233,14 +251,14 @@ public class WebCameraTest : MonoBehaviour
         }
 
         if(pointrect[0].Y < pointrect[1].Y){
-            drawrect.Y = pointrect[0].Y;
-        }else{
             drawrect.Y = pointrect[1].Y;
+        }else{
+            drawrect.Y = pointrect[0].Y;
         }
     }
     private void cut_rect(Point[] pointrect){
-        int h1 = pointrect[3].Y - pointrect[0].Y;
-        int h2 = pointrect[2].Y - pointrect[1].Y;
+        int h1 = pointrect[0].Y - pointrect[3].Y;
+        int h2 = pointrect[1].Y - pointrect[2].Y;
 
         if(h1 < h2){
             rectheight = h2;
@@ -301,10 +319,10 @@ public class WebCameraTest : MonoBehaviour
         }
         
         //四角の座標を参照するポイント型配列をclass内変数に代入しておく。
-        rectpoint = scanner.pointing_C;
+        rectpoint = new Point[4]{(scanner.pointing_C[3]) , (scanner.pointing_C[2]) , (scanner.pointing_C[1]) , (scanner.pointing_C[0])};
         
         return matCombined;
-    }
+    } 
 
     #endregion
     Texture2D duplicateTexture(Texture2D source)
@@ -389,6 +407,6 @@ public class WebCameraTest : MonoBehaviour
         String file_path = Application.dataPath + "/Assets/Resources/BufScreen";
         String Android_path = Application.temporaryCachePath + "/BufScreen";
 
-        SaveToJPGFile(outputTexture.GetPixels(),Android_path + num + ".jpg");
+        SaveToJPGFile(outputTexture.GetPixels(),file_path + num + ".jpg");
     }
 }
